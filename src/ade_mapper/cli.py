@@ -3,10 +3,15 @@
 import typer
 from rich import print as rprint
 
+from .main import main
+
 app = typer.Typer()
 
 
 @app.command()
-def fire(name: str = "Chell") -> None:
-    """Fire portal gun."""
-    rprint(f"[bold red]Alert![/bold red] {name} fired [green]portal gun[/green] :boom:")
+def collect() -> None:
+    """
+    Collects data related to ADE events
+    """
+    main()
+
