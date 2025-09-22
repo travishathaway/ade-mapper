@@ -1,8 +1,10 @@
+from hashlib import md5
 import os
 import json
 from pathlib import Path
 from pprint import pprint
 
+import geojson
 import httpx
 from platformdirs import user_cache_dir
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
@@ -154,6 +156,7 @@ def get_feature_collection(
         geometry = location.get("geometry", {}).get("location", {})
 
         feature = Feature(
+            id=md5(venue.encode("utf-8")).hexdigest(),
             geometry=Point((geometry.get("lng"), geometry.get("lat"))),
             properties={
                 "venue": venue,
@@ -210,7 +213,7 @@ def main():
 
     output_path = Path.cwd() / Path("ade-events.geojson")
     with output_path.open("w") as fp:
-        json.dump(feature_collection, fp)
+        geojson.dump(feature_collection, fp)
 
 
 if __name__ == "__main__":

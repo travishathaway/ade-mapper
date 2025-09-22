@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Points on a map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      // The value for 'accessToken' begins with 'pk...'
+      mapboxgl.accessToken = 'pk.eyJ1IjoidGhhdGgiLCJhIjoiY2lsMnc1OW9yM2pqcXV5a3NtMXh3b3I4ZCJ9.Mn1daTFDAN18C38dOS0SjQ ';
+      const map = new mapboxgl.Map({
+        container: 'map',
+        // Replace YOUR_STYLE_URL with your style URL.
+        style: 'mapbox://styles/mapbox/standard',
+        center: [4.895168, 52.370216],
+        zoom: 12
+      });
+
+      map.on("load", () => {
+        map.addSource("venues", {
+            type: "geojson",
+            data: "/ade-events.geojson",
+            generateId: true
+        });
+
+        map.addLayer({
+            id: "venues",
+            type: "circle",
+            source: "venues",
+            paint: {
+                "circle-radius": 6,
+                "circle-color": "#B42222"
+            }
+        });
+
+                // When a click event occurs on a feature in the places layer, open a popup at the
+        // location of the feature, with description HTML from its properties.
+        map.addInteraction('venues-click-interaction', {
+            type: 'click',
+            target: { layerId: 'venues' },
+            handler: (e) => {
+                // Copy coordinates array.
+                const coordinates = e.feature.geometry.coordinates.slice();
+
+                const events = JSON.parse(e.feature.properties.events).map(element => {
+                    return `
+                        <h3>${element.title}</h3>
+                        <p>From ${element.start_date_time.date} to ${element.end_date_time.date}</p>
+                        <a href="${element.url}">Event link</a>
+                        <p>${element.categories}</p>
+                        <hr/>
+                    `;
+                });
+
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(events.join(''))
+                    .addTo(map);
+            }
+        });
+
+        // Change the cursor to a pointer when the mouse is over a POI.
+        map.addInteraction('venues-mouseenter-interaction', {
+            type: 'mouseenter',
+            target: { layerId: 'venues' },
+            handler: () => {
+                map.getCanvas().style.cursor = 'pointer';
+            }
+        });
+
+        // Change the cursor back to a pointer when it stops hovering over a POI.
+        map.addInteraction('venues-mouseleave-interaction', {
+            type: 'mouseleave',
+            target: { layerId: 'venues' },
+            handler: () => {
+                map.getCanvas().style.cursor = '';
+            }
+        });
+      });
+    </script>
+  </body>
+</html>
