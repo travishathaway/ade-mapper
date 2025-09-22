@@ -1,0 +1,1 @@
+"""ADE Mapper test suite."""

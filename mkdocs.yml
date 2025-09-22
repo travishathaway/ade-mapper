@@ -1,0 +1,26 @@
+site_name: ADE Mapper
+site_description: A map for events during ADE 2025
+site_url: https://travishathaway.github.io/ade-mapper
+repo_url: https://github.com/travishathaway/ade-mapper
+repo_name: travishathaway/ade-mapper
+
+strict: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+
+nav:
+  - Home: index.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
