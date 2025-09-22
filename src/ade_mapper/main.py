@@ -1,12 +1,12 @@
 import os
 import json
-import time
 from pathlib import Path
 from pprint import pprint
 
 import httpx
 from platformdirs import user_cache_dir
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
+from geojson import Point, FeatureCollection, Feature
 
 from .errors import ConfigurationError
 
@@ -124,6 +124,48 @@ def get_place_info(venue: str, area: str) -> dict[str, dict]:
     return data
 
 
+def get_events_for_venue(events: list[dict], venue: str) -> list[dict]:
+    """
+    Filters events for a specific venue
+    """
+    return [
+        event
+        for event in events
+        if event.get("venue", {}).get("title") == venue
+    ]
+
+
+
+def get_feature_collection(
+    venue_locations: dict[str, dict],
+    events: list[dict]
+) -> FeatureCollection:
+    """
+    Converts venue locations to a GeoJSON FeatureCollection
+
+    Includes events for each venue in the properties
+    """
+    features = []
+
+    for venue, location in venue_locations.items():
+        if location is None:
+            continue
+
+        geometry = location.get("geometry", {}).get("location", {})
+
+        feature = Feature(
+            geometry=Point((geometry.get("lng"), geometry.get("lat"))),
+            properties={
+                "venue": venue,
+                "events": get_events_for_venue(events, venue),
+                "google_place": location
+            }
+        )
+        features.append(feature)
+
+    return FeatureCollection(features)
+
+
 def main():
     # init cache dir
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -132,7 +174,7 @@ def main():
 
     progress = Progress(
         SpinnerColumn(),
-        BarColumn(bar_width=None),
+        BarColumn(bar_width=40),
         TextColumn("[progress.description]{task.description}"),
     )
 
@@ -150,12 +192,9 @@ def main():
     progress.update(task, description="Done!") 
     venues = get_venues(events)
 
-    print(f"Events: {len(events)}")
-    print(f"Venues: {len(venues)}")
-
     progress = Progress(
         SpinnerColumn(),
-        BarColumn(bar_width=None),
+        BarColumn(bar_width=40),
         TextColumn("[progress.description]{task.description}"),
     )
 
@@ -167,10 +206,11 @@ def main():
         for venue in venues:
             venue_locations[venue] = get_place_info(venue, "Amsterdam")
 
-        num_venue_locations = sum([bool(location) for _, location in venue_locations.items()])
+    feature_collection = get_feature_collection(venue_locations, events)
 
-    pprint(f"Venue locations: {num_venue_locations}")
-    pprint(venue_locations)
+    output_path = Path.cwd() / Path("ade-events.geojson")
+    with output_path.open("w") as fp:
+        json.dump(feature_collection, fp)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 """ADE Mapper CLI."""
 
 import typer
-from rich import print as rprint
 
 from .main import main
 
