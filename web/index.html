@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Points on a map</title>
+    <title>ADE Mapper</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
     <link
@@ -39,7 +39,7 @@
       map.on("load", () => {
         map.addSource("venues", {
             type: "geojson",
-            data: "/ade-events.geojson",
+            data: "./ade-events.geojson",
             generateId: true
         });
 
