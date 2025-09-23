@@ -9,7 +9,7 @@ A map for events during ADE 2025
 To install this package, run:
 
 ```sh
-pip install ade-mapper
+pip install git+https://github.com/travishathaway/ade-mapper.git
 ```
 
 ## Using
