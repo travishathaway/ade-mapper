@@ -21,10 +21,35 @@
         bottom: 0;
         width: 100%;
       }
+      .modal.hidden { display: none; }
+      .modal { position: fixed; inset: 0; z-index: 9999; }
+      .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+      .modal-panel {
+        position: relative;
+        margin: 5vh auto;
+        max-width: 520px;
+        max-height: 75vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 20px 60px rgba(0,0,0,.25);
+      }
+      .modal-close { position: absolute; right: 10px; top: 10px; border: 0; background: transparent; font-size: 24px; cursor: pointer; }
     </style>
   </head>
   <body>
-    <div id="map"></div>
+    <div id="map" style="position:relative;height:100vh;"></div>
+      <!-- Modal -->
+      <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-backdrop" data-close></div>
+        <div class="modal-panel" role="document">
+          <button class="modal-close" aria-label="Close" data-close>&times;</button>
+          <h2 id="modal-title">Feature</h2>
+          <div id="modal-body"></div>
+        </div>
+      </div>
+
     <script>
       // The value for 'accessToken' begins with 'pk...'
       mapboxgl.accessToken = 'pk.eyJ1IjoidGhhdGgiLCJhIjoiY2lsMnc1OW9yM2pqcXV5a3NtMXh3b3I4ZCJ9.Mn1daTFDAN18C38dOS0SjQ ';
@@ -36,28 +61,129 @@
         zoom: 12
       });
 
+      // Modal utilities
+      const modalEl = document.getElementById('modal');
+      const modalBody = document.getElementById('modal-body');
+      const modalTitle = document.getElementById('modal-title');
+
+      function openModal({ title, html }) {
+        modalTitle.textContent = title || 'Details';
+        modalBody.innerHTML = html || '';
+        modalEl.classList.remove('hidden');
+        // focus management for accessibility
+        setTimeout(() => document.querySelector('.modal-close').focus(), 0);
+      }
+
+      function closeModal() {
+        modalEl.classList.add('hidden');
+      }
+
+      // Close on backdrop click, close button, or Escape
+      modalEl.addEventListener('click', (e) => {
+        if (e.target.matches('[data-close]')) closeModal();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (!modalEl.classList.contains('hidden') && e.key === 'Escape') closeModal();
+      });
+      
       map.on("load", () => {
         map.addSource("venues", {
             type: "geojson",
             data: "./ade-events.geojson",
-            generateId: true
+            generateId: true,
+            cluster: true,
         });
 
+        // Add zoom and rotation controls to the map
+        map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
         map.addLayer({
-            id: "venues",
+            id: "clusters",
             type: "circle",
             source: "venues",
+            filter: ["has", "point_count"],
             paint: {
-                "circle-radius": 6,
-                "circle-color": "#B42222"
+                // Use step expressions (https://docs.mapbox.com/style-spec/reference/expressions/#step)
+                // with three steps to implement three types of circles:
+                //   * Blue, 20px circles when point count is less than 100
+                //   * Yellow, 30px circles when point count is between 100 and 750
+                //   * Pink, 40px circles when point count is greater than or equal to 750
+                'circle-color': [
+                    'step',
+                    ['get', 'point_count'],
+                    '#51bbd6',
+                    100,
+                    '#f1f075',
+                    750,
+                    '#f28cb1'
+                ],
+                'circle-radius': [
+                    'step',
+                    ['get', 'point_count'],
+                    20,
+                    100,
+                    30,
+                    750,
+                    40
+                ],
+                'circle-emissive-strength': 1
             }
         });
 
-                // When a click event occurs on a feature in the places layer, open a popup at the
+        map.addLayer({
+            id: 'cluster-count',
+            type: 'symbol',
+            source: 'venues',
+            filter: ['has', 'point_count'],
+            layout: {
+                'text-field': ['get', 'point_count_abbreviated'],
+                'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+                'text-size': 12
+            }
+        });
+
+        map.addLayer({
+            id: 'unclustered-point',
+            type: 'circle',
+            source: 'venues',
+            filter: ['!', ['has', 'point_count']],
+            paint: {
+                'circle-color': '#000000',
+                'circle-radius': 8,
+                'circle-stroke-width': 1,
+                'circle-stroke-color': '#fff',
+                'circle-emissive-strength': 1
+            }
+        });
+
+        // inspect a cluster on click
+        map.addInteraction('click-clusters', {
+            type: 'click',
+            target: { layerId: 'clusters' },
+            handler: (e) => {
+                const features = map.queryRenderedFeatures(e.point, {
+                    layers: ['clusters']
+                });
+                const clusterId = features[0].properties.cluster_id;
+                map.getSource('venues').getClusterExpansionZoom(
+                    clusterId,
+                    (err, zoom) => {
+                        if (err) return;
+
+                        map.easeTo({
+                            center: features[0].geometry.coordinates,
+                            zoom: zoom
+                        });
+                    }
+                );
+            }
+        });
+
+        // When a click event occurs on a feature in the places layer, open a popup at the
         // location of the feature, with description HTML from its properties.
         map.addInteraction('venues-click-interaction', {
             type: 'click',
-            target: { layerId: 'venues' },
+            target: { layerId: 'unclustered-point' },
             handler: (e) => {
                 // Copy coordinates array.
                 const coordinates = e.feature.geometry.coordinates.slice();
@@ -72,26 +198,45 @@
                     `;
                 });
 
-                new mapboxgl.Popup()
-                    .setLngLat(coordinates)
-                    .setHTML(events.join(''))
-                    .addTo(map);
+                openModal({ title: e.feature.properties.venue, html: events.join('') });
+                // new mapboxgl.Popup()
+                //     .setLngLat(coordinates)
+                //     .setHTML(events.join(''))
+                //     .addTo(map);
             }
         });
 
         // Change the cursor to a pointer when the mouse is over a POI.
-        map.addInteraction('venues-mouseenter-interaction', {
+        map.addInteraction('clusters-mouseenter-interaction', {
             type: 'mouseenter',
-            target: { layerId: 'venues' },
+            target: { layerId: 'clusters' },
             handler: () => {
                 map.getCanvas().style.cursor = 'pointer';
             }
         });
 
         // Change the cursor back to a pointer when it stops hovering over a POI.
-        map.addInteraction('venues-mouseleave-interaction', {
+        map.addInteraction('clusters-mouseleave-interaction', {
             type: 'mouseleave',
-            target: { layerId: 'venues' },
+            target: { layerId: 'clusters' },
+            handler: () => {
+                map.getCanvas().style.cursor = '';
+            }
+        });
+
+        // Change the cursor to a pointer when the mouse is over a POI.
+        map.addInteraction('unclustered-point-mouseenter-interaction', {
+            type: 'mouseenter',
+            target: { layerId: 'unclustered-point' },
+            handler: () => {
+                map.getCanvas().style.cursor = 'pointer';
+            }
+        });
+
+        // Change the cursor back to a pointer when it stops hovering over a POI.
+        map.addInteraction('unclustered-point-mouseleave-interaction', {
+            type: 'mouseleave',
+            target: { layerId: 'unclustered-point' },
             handler: () => {
                 map.getCanvas().style.cursor = '';
             }
