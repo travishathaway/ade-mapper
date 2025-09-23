@@ -11,8 +11,13 @@
     />
     <style>
       body {
+        font-family: sans-serif;
         margin: 0;
         padding: 0;
+      }
+
+      .date-prefix {
+        font-weight: bold;
       }
 
       #map {
@@ -189,13 +194,17 @@
                 const coordinates = e.feature.geometry.coordinates.slice();
 
                 const events = JSON.parse(e.feature.properties.events).map(element => {
-                    return `
-                        <h3>${element.title}</h3>
-                        <p>From ${element.start_date_time.date} to ${element.end_date_time.date}</p>
-                        <a href="${element.url}">Event link</a>
-                        <p>${element.categories}</p>
-                        <hr/>
-                    `;
+                  const start = new Date(element.start_date_time.date).toLocaleString();
+                  const end = new Date(element.end_date_time.date).toLocaleString();
+
+                  return `
+                      <h3>${element.title}</h3>
+                      <h4>${element.subtitle || ""}</h4>
+                      <p><span class="date-prefix">From</span> ${start} <span class="date-prefix">to</span> ${end}</p>
+                      <a href="${element.url}">Event link</a>
+                      <p>${element.categories}</p>
+                      <hr/>
+                  `;
                 });
 
                 openModal({ title: e.feature.properties.venue, html: events.join('') });
