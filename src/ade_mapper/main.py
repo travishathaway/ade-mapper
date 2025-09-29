@@ -1,8 +1,8 @@
-from hashlib import md5
 import os
 import json
+import re
 from pathlib import Path
-from pprint import pprint
+from hashlib import md5
 
 import geojson
 import httpx
@@ -94,10 +94,16 @@ def get_venue_location(venue: str, area: str) -> dict[str, dict]:
             json.dump(data, fp)
             return data
 
-    return data
-
 
 def get_place_info(venue: str, area: str) -> dict[str, dict]:
+    """
+    TODO:
+        I want change this so that it just takes an address string instead of the
+        two arguments that I have right now.
+
+        The address is going to come from `parse_event_address_from_url`.
+    """
+    data = {}
     cache_obj = Path(CACHE_DIR) / Path(get_ade_venue_place_info_cache_key(venue))
 
     if cache_obj.exists():
@@ -136,6 +142,20 @@ def get_events_for_venue(events: list[dict], venue: str) -> list[dict]:
         if event.get("venue", {}).get("title") == venue
     ]
 
+
+def parse_event_address_from_url(url: str) -> str | None:
+    """
+    Given an events URL return the street address
+
+    We know that somewhere buried in the HTML is a link to Google Maps.
+    This is just a brute force way of plucking it out.
+    """
+    with httpx.Client() as client:
+        resp = client.get(url)
+        mat = re.search(r'"https://www.google.com/maps/search/\?api=1&query=(.+?)"', resp.text)
+
+        if mat:
+            return mat.group(1).replace("+", " ")
 
 
 def get_feature_collection(
