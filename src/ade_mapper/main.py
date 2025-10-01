@@ -1,14 +1,16 @@
 import os
 import json
 import re
+from functools import wraps
 from pathlib import Path
 from hashlib import md5
 
 import geojson
 import httpx
 from platformdirs import user_cache_dir
+from pymdownx.emoji import gemoji
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from geojson import Point, FeatureCollection, Feature
+from geojson import Point, FeatureCollection, Feature, geometry
 
 from .errors import ConfigurationError
 
@@ -37,19 +39,41 @@ def get_ade_venue_location_cache_key(venue: str) -> str:
 
 
 def get_ade_venue_place_info_cache_key(venue: str) -> str:
-    name = venue.replace(" ", "-").lower()
+    name = md5(venue.encode("utf-8")).hexdigest()
 
     return f"ade-venue-location-place-info--{name}.json"
 
 
-def get_ade_events(page: int) -> list[dict]:
-    cache_obj = Path(CACHE_DIR) / Path(get_ade_event_page_cache_key(page))
-    if cache_obj.exists():
-        try:
-            return json.load(cache_obj.open())
-        except json.decoder.JSONDecodeError:
-            pass
+def get_ade_venue_address_cache_key(event_id: int) -> str:
+    return f"ade-venue-address--{event_id}.json"
 
+
+def cache_request(cache_key_func):
+    """Cache request in specified directory using cache key function"""
+    def wrapper(func):
+        @wraps(func)
+        def wrapped(key: str | int):
+            cache_key = cache_key_func(key)
+            cache = Path(CACHE_DIR) / Path(cache_key)
+
+            if cache.exists():
+                try:
+                    return json.load(cache.open())
+                except json.decoder.JSONDecodeError:
+                    pass
+
+            data = func(key)
+
+            with cache.open("w") as fp:
+                json.dump(data, fp)
+                return data
+
+        return wrapped
+    return wrapper
+
+
+@cache_request(get_ade_event_page_cache_key)
+def get_ade_events(page: int) -> list[dict]:
     params = {
         "page": page,
         "section": "events",
@@ -60,25 +84,32 @@ def get_ade_events(page: int) -> list[dict]:
     with httpx.Client() as client:
         response = client.get(ADE_URL, params=params)
         data = response.json().get("data")
-        cache = Path(CACHE_DIR) / Path(get_ade_event_page_cache_key(page))
-        with cache.open("w") as fp:
-            json.dump(data, fp)
-            return data
+        return data
 
 
 def get_venues(events: list[dict]) -> list[str]:
     return list(filter(None, set([event.get("venue", {}).get("title") for event in events])))
 
 
+@cache_request(get_ade_venue_address_cache_key)
+def get_venue_address(event_id: int) -> str | None:
+    """
+    Retrieve venue address given an event id
+    """
+    url = f"https://www.amsterdam-dance-event.nl/api/event/{event_id}"
+
+    with httpx.Client() as client:
+        resp = client.get(url, follow_redirects=True)
+        mat = re.search(r'"https://www.google.com/maps/search/\?api=1&query=(.+?)"', resp.text)
+
+        if mat:
+            return mat.group(1).replace("+", " ")
+
+        return None
+
+
+@cache_request(get_ade_venue_location_cache_key)
 def get_venue_location(venue: str, area: str) -> dict[str, dict]:
-    cache_obj = Path(CACHE_DIR) / Path(get_ade_venue_location_cache_key(venue))
-
-    if cache_obj.exists():
-        try:
-            return json.load(cache_obj.open())
-        except json.decoder.JSONDecodeError:
-            pass
-
     params = {
         "q": f"{venue} {area}",
         "format": "json",
@@ -88,32 +119,18 @@ def get_venue_location(venue: str, area: str) -> dict[str, dict]:
     with httpx.Client() as client:
         response = client.get(NOM_URL, params=params, headers=NOM_HEADER)
         data = response.json()
-        cache_obj = Path(CACHE_DIR) / Path(get_ade_venue_location_cache_key(venue))
-
-        with cache_obj.open("w") as fp:
-            json.dump(data, fp)
-            return data
+        return data
 
 
-def get_place_info(venue: str, area: str) -> dict[str, dict]:
+@cache_request(get_ade_venue_place_info_cache_key)
+def get_place_info(address: str) -> dict[str, dict]:
     """
-    TODO:
-        I want change this so that it just takes an address string instead of the
-        two arguments that I have right now.
-
-        The address is going to come from `parse_event_address_from_url`.
+    Retrieve place info from Google API given an address
     """
     data = {}
-    cache_obj = Path(CACHE_DIR) / Path(get_ade_venue_place_info_cache_key(venue))
-
-    if cache_obj.exists():
-        try:
-            return json.load(cache_obj.open())
-        except json.decoder.JSONDecodeError:
-            pass
 
     params = {
-        "query": f"{venue} in {area}",
+        "query": address,
         "key": GOOGLE_API_KEY,
     }
 
@@ -123,11 +140,6 @@ def get_place_info(venue: str, area: str) -> dict[str, dict]:
 
         if len(results) > 0:
             data = results[0]
-            cache_obj = Path(CACHE_DIR) / Path(get_ade_venue_place_info_cache_key(venue))
-
-            with cache_obj.open("w") as fp:
-                json.dump(data, fp)
-                return data
 
     return data
 
@@ -173,11 +185,14 @@ def get_feature_collection(
         if location is None:
             continue
 
-        geometry = location.get("geometry", {}).get("location", {})
+        geom = location.get("geometry", {}).get("location", {})
+
+        if not geom.get("lng", None) or not geom.get("lat", None):
+            continue
 
         feature = Feature(
             id=md5(venue.encode("utf-8")).hexdigest(),
-            geometry=Point((geometry.get("lng"), geometry.get("lat"))),
+            geometry=Point((geom.get("lng"), geom.get("lat"))),
             properties={
                 "venue": venue,
                 "events": get_events_for_venue(events, venue),
@@ -212,8 +227,27 @@ def main():
 
             events.extend(data)
 
-    progress.update(task, description="Done!") 
+        progress.update(task, description="Done!")
+
     venues = get_venues(events)
+
+    progress = Progress(
+        SpinnerColumn(),
+        BarColumn(bar_width=40),
+        TextColumn("[progress.description]{task.description}"),
+    )
+    venue_addresses = {}
+
+    with progress:
+        task = progress.add_task("Fetching venue addresses...", total=None)
+
+        for event in events:
+            event_venue_title = event.get("venue", {}).get("title")
+            event_id = event.get("id")
+            if event_venue_title is not None:
+                venue_addresses[event_venue_title] = get_venue_address(event_id)
+
+        progress.update(task, description="Done!")
 
     progress = Progress(
         SpinnerColumn(),
@@ -227,15 +261,13 @@ def main():
         task = progress.add_task("Fetching location...", total=None)
 
         for venue in venues:
-            venue_locations[venue] = get_place_info(venue, "Amsterdam")
+            address = venue_addresses.get(venue)
+            venue_locations[venue] = get_place_info(address)
+
+        progress.update(task, description="Done!")
 
     feature_collection = get_feature_collection(venue_locations, events)
 
     output_path = Path.cwd() / Path("ade-events.geojson")
     with output_path.open("w") as fp:
         geojson.dump(feature_collection, fp)
-
-
-if __name__ == "__main__":
-    main()
-
