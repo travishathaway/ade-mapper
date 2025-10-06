@@ -1,75 +1,29 @@
 import os
-import json
 import re
-from functools import wraps
 from pathlib import Path
 from hashlib import md5
 
 import geojson
 import httpx
-from platformdirs import user_cache_dir
 from pymdownx.emoji import gemoji
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
-from geojson import Point, FeatureCollection, Feature, geometry
+from geojson import Point, FeatureCollection, Feature
 
-from .errors import ConfigurationError
-
-# Nominatim base URL
-NOM_URL = "https://nominatim.openstreetmap.org/search"
-ADE_URL = "https://www.amsterdam-dance-event.nl/api/program/filter/"
-GOOGLE_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-NOM_HEADER = {"User-Agent": "ade-mapper/0.1.0"}
-APP_NAME = "ade-mapper"
-APP_AUTHOR = "thath"
-CACHE_DIR = user_cache_dir(APP_NAME, APP_AUTHOR)
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-
-if GOOGLE_API_KEY is None:
-    raise ConfigurationError("GOOGLE_API_KEY must be defined as an environment variable")
-
-
-def get_ade_event_page_cache_key(page: int) -> str:
-    return f"ade-event-page-{page}.json"
-
-
-def get_ade_venue_location_cache_key(venue: str) -> str:
-    name = venue.replace(" ", "-").lower()
-
-    return f"ade-venue-location--{name}.json"
-
-
-def get_ade_venue_place_info_cache_key(venue: str) -> str:
-    name = md5(venue.encode("utf-8")).hexdigest()
-
-    return f"ade-venue-location-place-info--{name}.json"
-
-
-def get_ade_venue_address_cache_key(event_id: int) -> str:
-    return f"ade-venue-address--{event_id}.json"
-
-
-def cache_request(cache_key_func):
-    """Cache request in specified directory using cache key function"""
-    def wrapper(func):
-        @wraps(func)
-        def wrapped(key: str | int):
-            cache_key = cache_key_func(key)
-            cache = Path(CACHE_DIR) / Path(cache_key)
-
-            if cache.exists():
-                try:
-                    return json.load(cache.open())
-                except json.decoder.JSONDecodeError:
-                    pass
-
-            data = func(key)
-
-            with cache.open("w") as fp:
-                json.dump(data, fp)
-                return data
-
-        return wrapped
-    return wrapper
+from .cache import (
+    CACHE_DIR,
+    cache_request,
+    get_ade_event_page_cache_key,
+    get_ade_venue_address_cache_key,
+    get_ade_venue_location_cache_key,
+    get_ade_venue_place_info_cache_key
+)
+from .constants import (
+    ADE_URL,
+    NOM_URL,
+    NOM_HEADER,
+    GOOGLE_URL,
+    GOOGLE_API_KEY
+)
 
 
 @cache_request(get_ade_event_page_cache_key)

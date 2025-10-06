@@ -3,6 +3,7 @@
 import typer
 
 from .main import main
+from .cache import clear_cache
 
 app = typer.Typer()
 
@@ -14,3 +15,11 @@ def collect() -> None:
     """
     main()
 
+
+@app.command()
+def clean() -> None:
+    """
+    Cleans up cache directory
+    """
+    clear_cache()
+    typer.echo("Cache cleaned 🧹 🧼")

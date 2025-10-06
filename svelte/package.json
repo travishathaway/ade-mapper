@@ -1,0 +1,27 @@
+{
+  "name": "ade-mapper",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "autoprefixer": "^10.4.21",
+    "flowbite": "^3.1.2",
+    "flowbite-svelte": "^1.17.1",
+    "flowbite-svelte-icons": "^3.0.0",
+    "postcss": "^8.5.6",
+    "svelte": "^5.39.6",
+    "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.14",
+    "@tailwindcss/vite": "^4.1.14",
+    "mapbox-gl": "^3.15.0",
+    "tailwindcss": "^4.1.14"
+  }
+}
