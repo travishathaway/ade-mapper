@@ -1,6 +1,7 @@
 <script>
 import { Map, GeolocateControl, NavigationControl} from 'mapbox-gl';
-import { Modal } from 'flowbite-svelte';
+import { Modal, Card, Button, Drawer, DrawerHandle } from 'flowbite-svelte';
+import { StarSolid, ArrowUpRightFromSquareOutline, GridPlusSolid } from 'flowbite-svelte-icons';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { onMount, onDestroy } from 'svelte';
 
@@ -17,11 +18,14 @@ let initialState = { lng, lat, zoom };
 // Modal state
 let isModalOpen = false;
 let modalTitle = '';
-let modalContent = '';
+let modalEvents = [];
 
-function openModal(title, content) {
+// Drawer state
+let open = false;
+
+function openModal(title, events) {
   modalTitle = title;
-  modalContent = content;
+  modalEvents = events;
   isModalOpen = true;
 }
 
@@ -146,18 +150,18 @@ onMount(() => {
           const start = new Date(element.start_date_time.date).toLocaleString();
           const end = new Date(element.end_date_time.date).toLocaleString();
 
-          return `
-              <h3>${element.title}</h3>
-              <h4>${element.subtitle || ""}</h4>
-              <p><span class="date-prefix">From</span> ${start} <span class="date-prefix">to</span> ${end}</p>
-              <a href="${element.url}">Event link</a>
-              <p>${element.categories}</p>
-              <hr/>
-          `;
+          return {
+            title: element.title,
+            subtitle: element.subtitle,
+            start: start,
+            end: end,
+            url: element.url,
+            categories: element.categories
+          }
         });
 
         // Open the modal with the venue name and events
-        openModal(e.features[0].properties.venue, events.join(''));
+        openModal(e.features[0].properties.venue, events);
     });
 
     // Change the cursor to a pointer when the mouse is over a POI.
@@ -194,14 +198,45 @@ onDestroy(() => {
   <!--Flowbite Modal -->
   <Modal bind:open={isModalOpen} size="md" autoclose>
     <div class="text-center">
-      <h3>
+      <h3 class="text-3xl mb-4 font-extrabold tracking-tight text-gray-900 dark:text-white">
         {modalTitle}
       </h3>
       <div class="text-left prose max-w-none">
-        {@html modalContent}
+        {#each modalEvents as event}
+          <Card size="lg" class="mb-4 p-4 sm:p-6 md:p-8">
+              <h3 class="text-2xl mb-2 font-semibold tracking-tight text-gray-900 dark:text-white">{event.title}</h3>
+              <h4 class="text-lg mb-2">{event.subtitle || ""}</h4>
+              <p class="mb-2"><span class="font-semibold">From</span> {event.start} <span class="font-semibold">to</span> {event.end}</p>
+              <div class="mb-4">
+                <p class="font-semibold mb-1">Categories:</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{event.categories}</p>
+              </div>
+              
+              <div class="sm:flex sm:space-y-0 sm:space-x-4">
+                <Button href="{event.url}" target="_blank">
+                  Event link <ArrowUpRightFromSquareOutline class="ml-1 h-4 w-4"/>
+                </Button>
+                <Button href="{event.url}" target="_blank">
+                  Favorite <StarSolid class="ml-1 h-4 w-4"/>
+                </Button>
+              </div>
+          </Card>
+        {/each}
       </div>
     </div>
   </Modal>
+
+  <Drawer bind:open offset="52px" placement="left" class="rounded-t-lg" aria-labelledby="drawer-swipe-label">
+    <DrawerHandle onclick={() => (open = !open)} class="hover:bg-gray-50 dark:hover:bg-gray-700">
+      <h5 id="drawer-swipe-label" class="inline-flex items-center gap-2 text-base font-medium text-gray-500 dark:text-gray-400">
+        <GridPlusSolid />
+      </h5>
+    </DrawerHandle>
+
+    <div class="mt-16 grid grid-cols-1 gap-4 lg:grid-cols-1">
+      <h3>Oh Hai!</h3>
+    </div>
+  </Drawer>  
 </main>
 <style>
   .map {

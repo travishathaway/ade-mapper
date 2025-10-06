@@ -27,11 +27,23 @@ jobs:
       
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-        
+       
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./svelte
+      - name: Build
+        run: npm run build
+        working-directory: ./svelte
+
       - name: Upload GitHub Pages artifact 
         uses: actions/upload-pages-artifact@v4
         with:
-          path: web
+          path: ./svelte/dist
           
       - name: Deploy to GitHub Pages
         id: deployment
