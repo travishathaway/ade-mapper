@@ -33,6 +33,8 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          working-directory: ./svelte
+
       - name: Install dependencies
         run: npm install
         working-directory: ./svelte
