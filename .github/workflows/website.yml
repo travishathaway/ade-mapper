@@ -33,11 +33,12 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          working-directory: ./svelte
+          cache-dependency-path: svelte/package-lock.json
 
       - name: Install dependencies
         run: npm install
         working-directory: ./svelte
+
       - name: Build
         run: npm run build
         working-directory: ./svelte
