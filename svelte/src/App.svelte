@@ -1,6 +1,6 @@
 <script>
 import { Map, GeolocateControl, NavigationControl} from 'mapbox-gl';
-import { Modal, Card, Button, Drawer, DrawerHandle } from 'flowbite-svelte';
+import { Modal, Card, Button, Drawer, DrawerHandle, MultiSelect} from 'flowbite-svelte';
 import { StarSolid, ArrowUpRightFromSquareOutline, GridPlusSolid } from 'flowbite-svelte-icons';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { onMount, onDestroy } from 'svelte';
@@ -8,6 +8,10 @@ import { onMount, onDestroy } from 'svelte';
 let map;
 let mapContainer;
 let lng, lat, zoom;
+let geoJson = null;
+let filteredGeoJson = null;
+const GEOJSON_URL = "./ade-events.geojson";
+const VENUES_SOURCE = "venues";
 
 lng = 4.895168;
 lat =  52.370216;
@@ -23,13 +27,67 @@ let modalEvents = [];
 // Drawer state
 let open = false;
 
+// Event specific
+let categories = [];
+let selectedCategories = [];
+
 function openModal(title, events) {
   modalTitle = title;
   modalEvents = events;
   isModalOpen = true;
 }
 
-onMount(() => {
+function parseCategories(geoJson) {
+  const categorySet = new Set();
+
+  geoJson.features.forEach(feature => {
+    const events = feature.properties.events;
+    events.forEach(event => {
+      if (event.categories) {
+        event.categories.forEach(category => {
+          let cat = category.trim();
+          if (cat !== "") categorySet.add(cat);
+        });
+      }
+    });
+  });
+
+  categories = Array.from(categorySet).map(cat => ({
+    value: cat, name: cat
+  }));
+}
+
+function filterGeoJson(geoJson, categories) {
+  if (categories.length === 0) return geoJson;
+
+  function filterEvents(events, categories) {
+    return events.filter(event => {
+      const eventCatSet = new Set(event.categories);
+      const result = categories.map(elm => eventCatSet.has(elm));
+      return result.filter(x => x === true).length >= categories.length;
+    });
+  }
+
+  const filteredFeatures = geoJson.features.filter(feature => {
+    const events = feature.properties.events;
+    const filteredEvents = filterEvents(events, categories);
+
+    return filteredEvents.length > 0
+
+  }).map(feature => {
+    const events = feature.properties.events;
+    const filteredEvents = filterEvents(events, categories);
+
+    return { ...feature, properties: { ...feature.properties, events: filteredEvents } };
+  });
+
+  return {
+    type: "FeatureCollection",
+    features: filteredFeatures
+  };
+}
+
+onMount(async () => {
   map = new Map({
     container: mapContainer,
     accessToken: "pk.eyJ1IjoidGhhdGgiLCJhIjoiY2lsMnc1OW9yM2pqcXV5a3NtMXh3b3I4ZCJ9.Mn1daTFDAN18C38dOS0SjQ",
@@ -51,10 +109,13 @@ onMount(() => {
       })
   );
 
-  map.on("load", () => {
-    map.addSource("venues", {
+  map.on("load", async () => {
+    geoJson = await fetch(GEOJSON_URL).then(res => res.json());
+    parseCategories(geoJson);
+
+    map.addSource(VENUES_SOURCE, {
         type: "geojson",
-        data: "./ade-events.geojson",
+        data: geoJson,
         generateId: true,
         cluster: true,
     });
@@ -190,6 +251,15 @@ onDestroy(() => {
   map.remove();
 });
 
+$: if (map) {
+  let source = map.getSource(VENUES_SOURCE);
+  if (source && geoJson != null) {
+    source.setData(
+      filterGeoJson(geoJson, selectedCategories)
+    );
+  }
+}
+
 </script>
 
 <main>
@@ -234,7 +304,8 @@ onDestroy(() => {
     </DrawerHandle>
 
     <div class="mt-16 grid grid-cols-1 gap-4 lg:grid-cols-1">
-      <h3>Oh Hai!</h3>
+      <h3 class="text-lg font-semibold">Categories</h3>
+      <MultiSelect items={categories} bind:value={selectedCategories} placeholder="Select categories to filter" />
     </div>
   </Drawer>  
 </main>

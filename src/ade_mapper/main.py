@@ -5,7 +5,6 @@ from hashlib import md5
 
 import geojson
 import httpx
-from pymdownx.emoji import gemoji
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 from geojson import Point, FeatureCollection, Feature
 
@@ -103,7 +102,12 @@ def get_events_for_venue(events: list[dict], venue: str) -> list[dict]:
     Filters events for a specific venue
     """
     return [
-        event
+        {
+            **event,
+            "categories": [
+                c.strip() for c in event.get("categories", "").split("/")
+            ]
+        }
         for event in events
         if event.get("venue", {}).get("title") == venue
     ]
@@ -144,13 +148,14 @@ def get_feature_collection(
         if not geom.get("lng", None) or not geom.get("lat", None):
             continue
 
+
         feature = Feature(
             id=md5(venue.encode("utf-8")).hexdigest(),
             geometry=Point((geom.get("lng"), geom.get("lat"))),
             properties={
                 "venue": venue,
                 "events": get_events_for_venue(events, venue),
-                "google_place": location
+                "google_place": location,
             }
         )
         features.append(feature)
