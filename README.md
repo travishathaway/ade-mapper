@@ -4,7 +4,7 @@
 
 A map for events during ADE 2025. Checkout the website:
 
-- https://travishathaway.github.io/ade-mapper/
+- https://ade.thath.net
 
 ## Installing
 
