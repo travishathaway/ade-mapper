@@ -4,6 +4,7 @@ import { Modal, Card, Button, Drawer, DrawerHandle, MultiSelect} from 'flowbite-
 import { StarSolid, ArrowUpRightFromSquareOutline, GridPlusSolid } from 'flowbite-svelte-icons';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { onMount, onDestroy } from 'svelte';
+import Svelecte from 'svelecte';
 
 let map;
 let mapContainer;
@@ -25,11 +26,23 @@ let modalTitle = '';
 let modalEvents = [];
 
 // Drawer state
-let open = false;
+let isDrawerOpen = false;
 
 // Event specific
 let categories = [];
 let selectedCategories = [];
+
+// Date filtering
+const eventDates = [
+  { label: 'All Dates', value: 'all' },
+  { label: 'Wed, Oct 22', value: '2025-10-22' },
+  { label: 'Thu, Oct 23', value: '2025-10-23' },
+  { label: 'Fri, Oct 24', value: '2025-10-24' },
+  { label: 'Sat, Oct 25', value: '2025-10-25' },
+  { label: 'Sun, Oct 26', value: '2025-10-26' },
+  { label: 'Mon, Oct 27', value: '2025-10-27' }
+];
+let selectedDate = 'all';
 
 function openModal(title, events) {
   modalTitle = title;
@@ -57,28 +70,42 @@ function parseCategories(geoJson) {
   }));
 }
 
-function filterGeoJson(geoJson, categories) {
-  if (categories.length === 0) return geoJson;
-
-  function filterEvents(events, categories) {
+function filterGeoJson(geoJson, categories, selectedDate) {
+  function filterEvents(events, categories, selectedDate) {
     return events.filter(event => {
-      const eventCatSet = new Set(event.categories);
-      const result = categories.map(elm => eventCatSet.has(elm));
-      return result.filter(x => x === true).length >= categories.length;
+      // Filter by category
+      let categoryMatch = true;
+      if (categories.length > 0) {
+        const eventCatSet = new Set(event.categories);
+        const result = categories.map(elm => eventCatSet.has(elm));
+        categoryMatch = result.filter(x => x === true).length >= categories.length;
+      }
+
+      // Filter by date
+      let dateMatch = true;
+      if (selectedDate !== 'all') {
+        const eventDate = new Date(event.start_date_time.date);
+        const eventDateStr = eventDate.toISOString().split('T')[0];
+        dateMatch = eventDateStr === selectedDate;
+      }
+
+      return categoryMatch && dateMatch;
     });
   }
 
+  const filteredEvents = filterEvents(geoJson.features.flatMap(f => f.properties.events), categories, selectedDate);
+
   const filteredFeatures = geoJson.features.filter(feature => {
     const events = feature.properties.events;
-    const filteredEvents = filterEvents(events, categories);
+    const filtered = filterEvents(events, categories, selectedDate);
 
-    return filteredEvents.length > 0
+    return filtered.length > 0;
 
   }).map(feature => {
     const events = feature.properties.events;
-    const filteredEvents = filterEvents(events, categories);
+    const filtered = filterEvents(events, categories, selectedDate);
 
-    return { ...feature, properties: { ...feature.properties, events: filteredEvents } };
+    return { ...feature, properties: { ...feature.properties, events: filtered } };
   });
 
   return {
@@ -255,7 +282,7 @@ $: if (map) {
   let source = map.getSource(VENUES_SOURCE);
   if (source && geoJson != null) {
     source.setData(
-      filterGeoJson(geoJson, selectedCategories)
+      filterGeoJson(geoJson, selectedCategories, selectedDate)
     );
   }
 }
@@ -296,16 +323,35 @@ $: if (map) {
     </div>
   </Modal>
 
-  <Drawer bind:open offset="52px" placement="left" class="rounded-t-lg" aria-labelledby="drawer-swipe-label">
-    <DrawerHandle onclick={() => (open = !open)} class="hover:bg-gray-50 dark:hover:bg-gray-700">
-      <h5 id="drawer-swipe-label" class="inline-flex items-center gap-2 text-base font-medium text-gray-500 dark:text-gray-400">
-        <GridPlusSolid />
-      </h5>
-    </DrawerHandle>
+  <Button class="absolute top-4 left-4 z-10" onclick={() => (isDrawerOpen = !isDrawerOpen)}>
+    <span class="text-lg font-semibold mr-2">Menu</span> <GridPlusSolid class="h-6 w-6"/>
+  </Button>
+
+  <Drawer bind:open={isDrawerOpen} placement="left" class="rounded-t-lg" aria-labelledby="drawer-swipe-label">
 
     <div class="mt-16 grid grid-cols-1 gap-4 lg:grid-cols-1">
-      <h3 class="text-lg font-semibold">Categories</h3>
-      <MultiSelect items={categories} bind:value={selectedCategories} placeholder="Select categories to filter" />
+      <h3 class="text-lg font-semibold">Filter by Date</h3>
+      <div class="flex flex-wrap gap-2">
+        {#each eventDates as date}
+          <button
+            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors {selectedDate === date.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}"
+            onclick={() => selectedDate = date.value}
+          >
+            {date.label}
+          </button>
+        {/each}
+      </div>
+
+      <h3 class="text-lg font-semibold">Filter by Category</h3>
+      <div class="mr-2">
+        <Svelecte 
+          options={categories} 
+          bind:value={selectedCategories} 
+          placeholder="Select categories to filter" 
+          multiple={true} 
+          clearable={true} 
+        />
+      </div>
     </div>
   </Drawer>  
 </main>
