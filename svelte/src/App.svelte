@@ -1,7 +1,14 @@
 <script>
 import { Map, GeolocateControl, NavigationControl} from 'mapbox-gl';
-import { Modal, Card, Button, Drawer } from 'flowbite-svelte';
-import { StarSolid, StarOutline, ArrowUpRightFromSquareOutline, GridPlusSolid, HeartSolid, FilterSolid } from 'flowbite-svelte-icons';
+import { Modal, Card, Button, Drawer, Range, P} from 'flowbite-svelte';
+import {
+  StarSolid,
+  StarOutline,
+  ArrowUpRightFromSquareOutline,
+  GridPlusSolid,
+  HeartSolid,
+  FilterSolid
+} from 'flowbite-svelte-icons';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { onMount, onDestroy } from 'svelte';
 import Svelecte from 'svelecte';
@@ -11,7 +18,6 @@ let map;
 let mapContainer;
 let lng, lat, zoom;
 let geoJson = null;
-let filteredGeoJson = null;
 const GEOJSON_URL = "./ade-events.geojson";
 const VENUES_SOURCE = "venues";
 
@@ -25,6 +31,9 @@ let initialState = { lng, lat, zoom };
 let isModalOpen = $state(false);
 let modalTitle = $state('');
 let modalEvents = $state([]);
+
+// Start time filter value
+let startTime = $state(0);
 
 // Drawer state
 let isDrawerOpen = $state(false);
@@ -86,12 +95,16 @@ function filterGeoJson(geoJson, categories, selectedDate) {
         categoryMatch = result.filter(x => x === true).length >= categories.length;
       }
 
-      // Filter by date
+      // Filter by date and start time
       let dateMatch = true;
+      const eventDate = new Date(event.start_date_time.date);
+      const eventDateStr = eventDate.toISOString().split('T')[0];
+      const startHour = eventDate.getHours();
+
       if (selectedDate !== 'all') {
-        const eventDate = new Date(event.start_date_time.date);
-        const eventDateStr = eventDate.toISOString().split('T')[0];
-        dateMatch = eventDateStr === selectedDate;
+        dateMatch = eventDateStr === selectedDate && startHour >= startTime;
+      } else {
+        dateMatch = startHour >= startTime;
       }
 
       return categoryMatch && dateMatch;
@@ -323,6 +336,14 @@ function getFavoriteEvents() {
   return allEvents;
 }
 
+function formatStartTime(startTime) {
+  const hours = String(Math.floor(startTime)).padStart(2, '0');
+  if (startTime % 1 !== 0) {
+    return `${hours}:30`;
+  }
+  return `${hours}:00`;
+}
+
 // TODO: Could be nice to use "actions" instead here because $effect should only
 //       be used sparingly. It's okay for now though.
 $effect(() => {
@@ -331,6 +352,7 @@ $effect(() => {
   const date = selectedDate;
   const favOnly = showOnlyFavorites;
   const favs = $favorites;
+  const start = startTime;
 
   if (map && geoJson != null) {
     const source = map.getSource(VENUES_SOURCE);
@@ -397,7 +419,7 @@ $effect(() => {
   </Modal>
 
   <div class="fixed top-0 left-0 w-full h-16 flex items-center px-4">
-    <Button size="sm" class="mt-4" onclick={() => {
+    <Button size="md" class="mt-4" onclick={() => {
       activeTab = 'filters';
       isDrawerOpen = true;
     }}>
@@ -445,85 +467,91 @@ $effect(() => {
             {/each}
           </div>
 
-          <h3 class="text-lg font-semibold">Filter by Category</h3>
-          <div class="mr-2">
-            <Svelecte
-              options={categories}
-              bind:value={selectedCategories}
-              placeholder="Select categories to filter"
-              multiple={true}
-              clearable={true}
-            />
-          </div>
-
-          <hr class="my-4" />
-
-          <h3 class="text-lg font-semibold">Show Favorites Only</h3>
-          <button
-            class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {showOnlyFavorites ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600' : 'bg-red-600 text-white' }"
-            onclick={() => {
-              showOnlyFavorites = !showOnlyFavorites;
-              selectedCategories = [];
-              selectedDate = 'all';
-            }}
-          >
-            {showOnlyFavorites ? 'Show All Venues' : 'Show Favorites Only'}
-          </button>
-        </div>
-      {:else}
-        <div class="grid grid-cols-1 gap-4">
-          <h3 class="text-2xl font-bold text-red-600">
-            <HeartSolid class="inline h-6 w-6 mr-2"/>
-            My Favorites
-          </h3>
-
-          {#if $favorites.length === 0}
-            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-              <StarOutline class="mx-auto h-16 w-16 mb-4 opacity-30"/>
-              <p class="text-lg">No favorites yet!</p>
-              <p class="text-sm mt-2">Click on a venue on the map and add events to your favorites.</p>
+          <h3 class="text-lg font-semibold">Starts After</h3>
+          <div class="gap-2">
+            <Range id="range-steps" min="0" max="23.5" bind:value={startTime} step="0.5" />
+              <P size="3xl" class="text-center">{formatStartTime(startTime)}</P>
             </div>
-          {:else}
-            <p class="text-sm text-gray-600 dark:text-gray-400">
-              You have {$favorites.length} favorite event{$favorites.length !== 1 ? 's' : ''}
-            </p>
 
-            {#each getFavoriteEvents() as event}
-              <Card size="lg" class="mb-2 p-4">
-                <div class="flex justify-between items-start mb-2">
-                  <h4 class="text-lg font-semibold text-gray-900 dark:text-white flex-1">{event.title}</h4>
-                  <button
-                    class="text-red-600 hover:text-red-800 ml-2"
-                    onclick={() => toggleFavorite(event.id)}
-                    title="Remove from favorites"
-                  >
-                    <StarSolid class="h-5 w-5"/>
-                  </button>
-                </div>
-                {#if event.subtitle}
-                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">{event.subtitle}</p>
-                {/if}
-                <p class="text-xs text-gray-500 dark:text-gray-500 mb-1">
-                  <span class="font-semibold">Venue:</span> {event.venue}
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-500 mb-2">
-                  <span class="font-semibold">From</span> {event.start} <span class="font-semibold">to</span> {event.end}
-                </p>
-                <Button size="xs" href={event.url} target="_blank">
-                  View Event <ArrowUpRightFromSquareOutline class="ml-1 h-3 w-3"/>
-                </Button>
-              </Card>
-            {/each}
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </Drawer>
-</main>
-<style>
-  .map {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-  }
+            <h3 class="text-lg font-semibold">Filter by Category</h3>
+            <div class="mr-2">
+              <Svelecte
+                options={categories}
+                bind:value={selectedCategories}
+                placeholder="Select categories to filter"
+                multiple={true}
+                clearable={true}
+              />
+            </div>
+
+            <hr class="my-4" />
+
+            <h3 class="text-lg font-semibold">Show Favorites Only</h3>
+            <button
+              class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {showOnlyFavorites ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600' : 'bg-red-600 text-white' }"
+              onclick={() => {
+                showOnlyFavorites = !showOnlyFavorites;
+                selectedCategories = [];
+                selectedDate = 'all';
+              }}
+            >
+              {showOnlyFavorites ? 'Show All Venues' : 'Show Favorites Only'}
+            </button>
+          </div>
+        {:else}
+          <div class="grid grid-cols-1 gap-4">
+            <h3 class="text-2xl font-bold text-red-600">
+              <HeartSolid class="inline h-6 w-6 mr-2"/>
+              My Favorites
+            </h3>
+
+            {#if $favorites.length === 0}
+              <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                <StarOutline class="mx-auto h-16 w-16 mb-4 opacity-30"/>
+                <p class="text-lg">No favorites yet!</p>
+                <p class="text-sm mt-2">Click on a venue on the map and add events to your favorites.</p>
+              </div>
+            {:else}
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                You have {$favorites.length} favorite event{$favorites.length !== 1 ? 's' : ''}
+              </p>
+
+              {#each getFavoriteEvents() as event}
+                <Card size="lg" class="mb-2 p-4">
+                  <div class="flex justify-between items-start mb-2">
+                    <h4 class="text-lg font-semibold text-gray-900 dark:text-white flex-1">{event.title}</h4>
+                    <button
+                      class="text-red-600 hover:text-red-800 ml-2"
+                      onclick={() => toggleFavorite(event.id)}
+                      title="Remove from favorites"
+                    >
+                      <StarSolid class="h-5 w-5"/>
+                    </button>
+                  </div>
+                  {#if event.subtitle}
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">{event.subtitle}</p>
+                  {/if}
+                  <p class="text-xs text-gray-500 dark:text-gray-500 mb-1">
+                    <span class="font-semibold">Venue:</span> {event.venue}
+                  </p>
+                  <p class="text-xs text-gray-500 dark:text-gray-500 mb-2">
+                    <span class="font-semibold">From</span> {event.start} <span class="font-semibold">to</span> {event.end}
+                  </p>
+                  <Button size="xs" href={event.url} target="_blank">
+                    View Event <ArrowUpRightFromSquareOutline class="ml-1 h-3 w-3"/>
+                  </Button>
+                </Card>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </Drawer>
+  </main>
+  <style>
+    .map {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
 </style>
