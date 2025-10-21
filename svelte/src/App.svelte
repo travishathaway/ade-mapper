@@ -1,10 +1,11 @@
 <script>
 import { Map, GeolocateControl, NavigationControl} from 'mapbox-gl';
-import { Modal, Card, Button, Drawer, DrawerHandle, MultiSelect} from 'flowbite-svelte';
-import { StarSolid, ArrowUpRightFromSquareOutline, GridPlusSolid } from 'flowbite-svelte-icons';
+import { Modal, Card, Button, Drawer } from 'flowbite-svelte';
+import { StarSolid, StarOutline, ArrowUpRightFromSquareOutline, GridPlusSolid, HeartSolid, FilterSolid } from 'flowbite-svelte-icons';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { onMount, onDestroy } from 'svelte';
 import Svelecte from 'svelecte';
+import { localStorageStore } from './lib/localStorageStore.js';
 
 let map;
 let mapContainer;
@@ -21,16 +22,21 @@ zoom = 12;
 let initialState = { lng, lat, zoom };
 
 // Modal state
-let isModalOpen = false;
-let modalTitle = '';
-let modalEvents = [];
+let isModalOpen = $state(false);
+let modalTitle = $state('');
+let modalEvents = $state([]);
 
 // Drawer state
-let isDrawerOpen = false;
+let isDrawerOpen = $state(false);
+let activeTab = $state('filters'); // 'filters' or 'favorites'
+
+// Favorites store
+const favorites = localStorageStore('ade-favorites', []);
+let showOnlyFavorites = $state(false);
 
 // Event specific
-let categories = [];
-let selectedCategories = [];
+let categories = $state([]);
+let selectedCategories = $state([]);
 
 // Date filtering
 const eventDates = [
@@ -40,9 +46,8 @@ const eventDates = [
   { label: 'Fri, Oct 24', value: '2025-10-24' },
   { label: 'Sat, Oct 25', value: '2025-10-25' },
   { label: 'Sun, Oct 26', value: '2025-10-26' },
-  { label: 'Mon, Oct 27', value: '2025-10-27' }
 ];
-let selectedDate = 'all';
+let selectedDate = $state('all');
 
 function openModal(title, events) {
   modalTitle = title;
@@ -239,6 +244,7 @@ onMount(async () => {
           const end = new Date(element.end_date_time.date).toLocaleString();
 
           return {
+            id: element.id,
             title: element.title,
             subtitle: element.subtitle,
             start: start,
@@ -278,14 +284,73 @@ onDestroy(() => {
   map.remove();
 });
 
-$: if (map) {
-  let source = map.getSource(VENUES_SOURCE);
-  if (source && geoJson != null) {
-    source.setData(
-      filterGeoJson(geoJson, selectedCategories, selectedDate)
-    );
-  }
+// Helper functions for favorites
+function toggleFavorite(eventId) {
+  favorites.update(favs => {
+    if (favs.includes(eventId)) {
+      return favs.filter(id => id !== eventId);
+    } else {
+      return [...favs, eventId];
+    }
+  });
 }
+
+function isFavorite(eventId) {
+  return $favorites.includes(eventId);
+}
+
+function getFavoriteEvents() {
+  if (!geoJson) return [];
+
+  const allEvents = [];
+  geoJson.features.forEach(feature => {
+    feature.properties.events.forEach(event => {
+      if ($favorites.includes(event.id)) {
+        allEvents.push({
+          id: event.id,
+          title: event.title,
+          subtitle: event.subtitle,
+          start: new Date(event.start_date_time.date).toLocaleString(),
+          end: new Date(event.end_date_time.date).toLocaleString(),
+          url: event.url,
+          categories: event.categories,
+          venue: feature.properties.venue
+        });
+      }
+    });
+  });
+
+  return allEvents;
+}
+
+// TODO: Could be nice to use "actions" instead here because $effect should only
+//       be used sparingly. It's okay for now though.
+$effect(() => {
+  // Explicitly read all reactive dependencies to ensure tracking
+  const cats = selectedCategories;
+  const date = selectedDate;
+  const favOnly = showOnlyFavorites;
+  const favs = $favorites;
+
+  if (map && geoJson != null) {
+    const source = map.getSource(VENUES_SOURCE);
+    if (source) {
+      let filteredData = filterGeoJson(geoJson, cats, date);
+
+      // Further filter by favorites if the toggle is on
+      if (favOnly && favs.length > 0) {
+        filteredData = {
+          type: "FeatureCollection",
+          features: filteredData.features.filter(feature => {
+            return feature.properties.events.some(event => favs.includes(event.id));
+          })
+        };
+      }
+
+      source.setData(filteredData);
+    }
+  }
+});
 
 </script>
 
@@ -293,7 +358,7 @@ $: if (map) {
   <div class="map" bind:this={mapContainer}></div>
   
   <!--Flowbite Modal -->
-  <Modal bind:open={isModalOpen} size="md" autoclose>
+  <Modal bind:open={isModalOpen} size="md">
     <div class="text-center">
       <h3 class="text-3xl mb-4 font-extrabold tracking-tight text-gray-900 dark:text-white">
         {modalTitle}
@@ -310,11 +375,19 @@ $: if (map) {
               </div>
               
               <div class="sm:flex sm:space-y-0 sm:space-x-4">
-                <Button href="{event.url}" target="_blank">
+                <Button href={event.url} target="_blank">
                   Event link <ArrowUpRightFromSquareOutline class="ml-1 h-4 w-4"/>
                 </Button>
-                <Button href="{event.url}" target="_blank">
-                  Favorite <StarSolid class="ml-1 h-4 w-4"/>
+                <Button
+                  color={isFavorite(event.id) ? "red" : "alternative"}
+                  onclick={() => toggleFavorite(event.id)}
+                >
+                  {isFavorite(event.id) ? 'Remove from favorites' : 'Add to favorites'}
+                  {#if isFavorite(event.id)}
+                    <StarSolid class="ml-1 h-4 w-4"/>
+                  {:else}
+                    <StarOutline class="ml-1 h-4 w-4"/>
+                  {/if}
                 </Button>
               </div>
           </Card>
@@ -323,37 +396,129 @@ $: if (map) {
     </div>
   </Modal>
 
-  <Button class="absolute top-4 left-4 z-10" onclick={() => (isDrawerOpen = !isDrawerOpen)}>
-    <span class="text-lg font-semibold mr-2">Menu</span> <GridPlusSolid class="h-6 w-6"/>
-  </Button>
+  <div class="fixed top-0 left-0 w-full h-16 flex items-center px-4">
+    <Button size="sm" class="mt-4" onclick={() => {
+      activeTab = 'filters';
+      isDrawerOpen = true;
+    }}>
+      <span class="hidden md:inline font-semibold mr-2">Menu</span>
+      <GridPlusSolid class="h-4 w-4"/>
+    </Button>
+  </div>
 
-  <Drawer bind:open={isDrawerOpen} placement="left" class="rounded-t-lg" aria-labelledby="drawer-swipe-label">
 
-    <div class="mt-16 grid grid-cols-1 gap-4 lg:grid-cols-1">
-      <h3 class="text-lg font-semibold">Filter by Date</h3>
-      <div class="flex flex-wrap gap-2">
-        {#each eventDates as date}
+  <Drawer bind:open={isDrawerOpen} placement="left" class="rounded-t-lg" aria-labelledby="drawer-label">
+    <div class="p-4">
+      <!-- Pill-style tabs -->
+      <div class="flex gap-2 mb-6 bg-gray-100 dark:bg-gray-800 p-1 rounded-full">
+        <button
+          class="flex-1 px-4 py-2 rounded-full text-sm font-medium transition-all {activeTab === 'filters' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+          onclick={() => activeTab = 'filters'}
+        >
+          <FilterSolid class="inline h-4 w-4 mr-1"/>
+          Filters
+        </button>
+        <button
+          class="flex-1 px-4 py-2 rounded-full text-sm font-medium transition-all {activeTab === 'favorites' ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}"
+          onclick={() => activeTab = 'favorites'}
+        >
+          <HeartSolid class="inline h-4 w-4 mr-1"/>
+          Favorites
+          {#if $favorites.length > 0}
+            <span class="ml-1 bg-red-500 text-white rounded-full px-2 py-0.5 text-xs font-bold">{$favorites.length}</span>
+          {/if}
+        </button>
+      </div>
+
+      <!-- Tab content -->
+      {#if activeTab === 'filters'}
+        <div class="grid grid-cols-1 gap-4">
+          <h3 class="text-lg font-semibold">Filter by Date</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each eventDates as date}
+              <button
+                class="px-3 py-2 rounded-lg text-sm font-medium transition-colors {selectedDate === date.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}"
+                onclick={() => selectedDate = date.value}
+              >
+                {date.label}
+              </button>
+            {/each}
+          </div>
+
+          <h3 class="text-lg font-semibold">Filter by Category</h3>
+          <div class="mr-2">
+            <Svelecte
+              options={categories}
+              bind:value={selectedCategories}
+              placeholder="Select categories to filter"
+              multiple={true}
+              clearable={true}
+            />
+          </div>
+
+          <hr class="my-4" />
+
+          <h3 class="text-lg font-semibold">Show Favorites Only</h3>
           <button
-            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors {selectedDate === date.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'}"
-            onclick={() => selectedDate = date.value}
+            class="px-4 py-2 rounded-lg text-sm font-medium transition-colors {showOnlyFavorites ? 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600' : 'bg-red-600 text-white' }"
+            onclick={() => {
+              showOnlyFavorites = !showOnlyFavorites;
+              selectedCategories = [];
+              selectedDate = 'all';
+            }}
           >
-            {date.label}
+            {showOnlyFavorites ? 'Show All Venues' : 'Show Favorites Only'}
           </button>
-        {/each}
-      </div>
+        </div>
+      {:else}
+        <div class="grid grid-cols-1 gap-4">
+          <h3 class="text-2xl font-bold text-red-600">
+            <HeartSolid class="inline h-6 w-6 mr-2"/>
+            My Favorites
+          </h3>
 
-      <h3 class="text-lg font-semibold">Filter by Category</h3>
-      <div class="mr-2">
-        <Svelecte 
-          options={categories} 
-          bind:value={selectedCategories} 
-          placeholder="Select categories to filter" 
-          multiple={true} 
-          clearable={true} 
-        />
-      </div>
+          {#if $favorites.length === 0}
+            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+              <StarOutline class="mx-auto h-16 w-16 mb-4 opacity-30"/>
+              <p class="text-lg">No favorites yet!</p>
+              <p class="text-sm mt-2">Click on a venue on the map and add events to your favorites.</p>
+            </div>
+          {:else}
+            <p class="text-sm text-gray-600 dark:text-gray-400">
+              You have {$favorites.length} favorite event{$favorites.length !== 1 ? 's' : ''}
+            </p>
+
+            {#each getFavoriteEvents() as event}
+              <Card size="lg" class="mb-2 p-4">
+                <div class="flex justify-between items-start mb-2">
+                  <h4 class="text-lg font-semibold text-gray-900 dark:text-white flex-1">{event.title}</h4>
+                  <button
+                    class="text-red-600 hover:text-red-800 ml-2"
+                    onclick={() => toggleFavorite(event.id)}
+                    title="Remove from favorites"
+                  >
+                    <StarSolid class="h-5 w-5"/>
+                  </button>
+                </div>
+                {#if event.subtitle}
+                  <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">{event.subtitle}</p>
+                {/if}
+                <p class="text-xs text-gray-500 dark:text-gray-500 mb-1">
+                  <span class="font-semibold">Venue:</span> {event.venue}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-500 mb-2">
+                  <span class="font-semibold">From</span> {event.start} <span class="font-semibold">to</span> {event.end}
+                </p>
+                <Button size="xs" href={event.url} target="_blank">
+                  View Event <ArrowUpRightFromSquareOutline class="ml-1 h-3 w-3"/>
+                </Button>
+              </Card>
+            {/each}
+          {/if}
+        </div>
+      {/if}
     </div>
-  </Drawer>  
+  </Drawer>
 </main>
 <style>
   .map {
